@@ -1,0 +1,356 @@
+
+/********************************************
+*			STM32F439 Main (C Startup File)  			*
+*			Developed for the STM32								*
+*			Author: Dr. Glenn Matthews						*
+*			Source File														*
+********************************************/
+
+#include <stdint.h>
+#include "boardSupport.h"
+#include "main.h"
+#include "stm32f439xx.h"
+#include	"gpioControl.h"
+
+#define Pressed 0x0
+#define Notpressed 0x1
+
+void delay(unsigned int cnt) {
+  while (cnt-- > 0); // delay cnt 'cycles'
+}
+
+
+//******************************************************************************//
+// Function: Configure RCC
+// Input : None
+// Return : None
+// Description : Configuration for RCC
+// *****************************************************************************//
+void initRCC(void)
+{
+		//Enable register GPIOA, GPIOB and GPIOF
+		RCC->AHB1ENR	|= RCC_AHB1ENR_GPIOAEN;
+		RCC->AHB1ENR	|= RCC_AHB1ENR_GPIOBEN;
+		RCC->AHB1ENR	|= RCC_AHB1ENR_GPIOFEN;
+		
+		//Enable TIM6 
+		RCC->APB1ENR	|=	RCC_APB1ENR_TIM6EN;
+	
+	
+		//Reset the interface	
+		RCC->AHB1RSTR	|=	RCC_AHB1RSTR_GPIOARST 	|	RCC_AHB1RSTR_GPIOBRST 	|	RCC_AHB1RSTR_GPIOFRST;
+		RCC->APB1RSTR	|=	RCC_APB1RSTR_TIM6RST;
+	
+		//Wait for two clocks cycles
+	
+		__ASM("NOP");		__ASM("NOP");
+	
+		//Disable the reset bit
+		RCC->AHB1RSTR	&=	~(RCC_AHB1RSTR_GPIOARST 	|	RCC_AHB1RSTR_GPIOBRST 	|	RCC_AHB1RSTR_GPIOFRST);
+	
+		//Wait for two clocks cycles
+	
+		__ASM("NOP");		__ASM("NOP");	
+}
+
+
+
+//******************************************************************************//
+// Function: UARTconfiguration
+// Input : None
+// Return : None
+// Description : Configuration for UART
+// *****************************************************************************//
+void initUSART()
+{
+		//Enable the clock config for GPIOB and USART3
+		RCC->AHB1ENR |= RCC_AHB1ENR_GPIOBEN;
+		RCC->APB1ENR |=	RCC_APB1ENR_USART3EN;
+
+	
+	
+		//Reset the peripheral interface
+	
+		RCC->AHB1ENR	|=	RCC_AHB1RSTR_GPIOBRST;
+		RCC->APB1ENR	|=	RCC_APB1RSTR_USART3RST;
+	
+		//Wait for two clocks cycles
+	
+		__ASM("NOP");		__ASM("NOP");
+	
+	
+		//Configure the GPIOB MODER register
+	
+		GPIOB->MODER	&=	~(GPIO_MODER_MODE11_Msk | GPIO_MODER_MODE10_Msk);
+		GPIOB->MODER	|=	(0x02 << GPIO_MODER_MODE11_Pos | 0x02 << GPIO_MODER_MODE10_Pos);	
+	
+		//Setup the Alternate Function - AF7
+		GPIOB->AFR[1]	&=	~(GPIO_AFRH_AFSEL11_Msk | GPIO_AFRH_AFSEL10_Msk);
+		GPIOB->AFR[1]	|= (0x07 << GPIO_AFRH_AFSEL11_Pos)| (0x07 << GPIO_AFRH_AFSEL10_Pos);
+	
+		//Turn on 16 time over smapling
+		USART3->CR1	&=	~USART_CR1_OVER8;
+		
+		//Set the USART BaudRate - Clear out the register firat
+		USART3->BRR &=	0xFFFF0000;
+		
+		//Set 115200 BaudRate
+		USART3->BRR	|=	(0x16	<<	USART_BRR_DIV_Mantissa_Pos)	| (0x0D	<<	USART_BRR_DIV_Fraction_Pos);
+		
+		//Set the number of bits per transfer (8), by clear bit 12 of USART_CR1
+		USART3->CR1	&=	~USART_CR1_M;
+		
+		//Set the number of stop bits	-	1 stop bit by set bit 12 and 13 of USART_CR2 to 00
+		USART3->CR2	&=	~USART_CR2_STOP_Msk;
+		USART3->CR2	|=	(0x00 << USART_CR2_STOP_Pos);
+		
+		//Disable the system parity by clear bit 10 in USART_CR1
+		USART3->CR1	&=	~USART_CR1_PCE;
+		
+		//Select mode of operation 
+		USART3->CR2	&=	~(USART_CR2_CLKEN	|	USART_CR2_CPOL	|	USART_CR2_CPHA);
+		
+		//Disable hardware flow control
+		USART3->CR2	&=	~(USART_CR3_CTSE	|	USART_CR3_RTSE);
+		
+		//Now that the configuration is complete,enable the USART, transmitter and receive section
+		USART3->CR1	|=	(USART_CR1_TE	|	USART_CR1_UE	|	USART_CR1_RE);
+		
+}
+
+//******************************************************************************//
+// Function: GPIO configuration
+// Input : None
+// Return : None
+// Description : Entry point into the application.
+// *****************************************************************************//
+void initGPIO()
+{
+		GPIO_Config	portConfig;
+	
+		//DIGITAL OUTPUT PA10 and PB0
+		//******************************************************************************//
+		//PA10
+		portConfig.port	= 	GPIOA;
+		portConfig.pin	=	Pin10;
+		portConfig.mode	=	GPIO_Output;
+		portConfig.pullUpDown	= GPIO_No_Pull;
+		portConfig.outputType	=	GPIO_Output_PushPull;
+		portConfig.speed	=	GPIO_2MHz;
+		gpio_configureGPIO(&portConfig);
+	
+		//PB0
+		portConfig.port	= 	GPIOB;
+		portConfig.pin	=	Pin0;
+		gpio_configureGPIO(&portConfig);
+		
+
+	
+	
+	
+		//******************************************************************************//
+		//DIGITAL INPUT PA3, PA8, PA9, 
+		portConfig.port	= 	GPIOA;
+		portConfig.mode	=	GPIO_Input;
+		portConfig.pullUpDown	= GPIO_Pull_Up;
+		portConfig.speed	=	GPIO_2MHz;
+
+		//PA3
+		portConfig.pin	=	Pin3;
+		gpio_configureGPIO(&portConfig);
+
+		//PA8
+		portConfig.pin	=	Pin8;
+		gpio_configureGPIO(&portConfig);
+
+		//PA9
+		portConfig.pin	=	Pin9;
+		gpio_configureGPIO(&portConfig);
+		
+		//******************************************************************************//
+		//ANALOGUE INPUT PF10
+		portConfig.port	= 	GPIOF;
+		portConfig.pin	=	Pin10;
+		gpio_configureGPIO(&portConfig);
+}
+
+//******************************************************************************//
+// Function: Switches Function
+// Input : None
+// Return : None
+// Description : Entry point into the application.
+// *****************************************************************************//
+int LightSwitch()
+{
+	if (GPIOA->IDR & 1<< 9)
+	{
+		return Pressed;									//Pressed
+	}
+	else
+	{
+		return Notpressed;							//Not Pressed
+	}	
+}
+
+int FanSwitch()
+{
+	if (GPIOA->IDR & 1<< 8)
+	{
+		return Pressed;									//Pressed
+	}
+	else
+	{
+		return Notpressed;									//Not Pressed
+	}	
+}
+
+int LightIntensitySensor()
+{
+	if (GPIOA->IDR & 1<< 3)
+	{
+		return Pressed;									//Pressed
+	}
+	else
+	{
+		return Notpressed;									//Not Pressed
+	}	
+}
+
+//******************************************************************************//
+// Function: FanController
+// Input : Fan Switch =
+// Return : Updated value if rising edge is detected
+// Description : Entry point into the application.
+// *****************************************************************************//
+int FanController()
+{
+		//a is the variable to hold the current state of the button
+		int Button = FanSwitch();
+		if (Button	==	Pressed)
+		{
+				delay(1e6);																												//Delay one sec
+					while(1)
+					{
+						Button = FanSwitch();
+						if (Button == Pressed)		//A while loop works as a detection of the rising edge
+						{
+							while(1)
+							{
+								Button = FanSwitch();
+								if (Button == Notpressed)
+								{
+									return 1;
+								}
+							}
+						}
+						else
+						{
+						
+						break;
+						
+						}
+			}
+		}
+		return 0;
+}
+
+//******************************************************************************//
+// Function: LightController
+// Input : Fan Switch =
+// Return : Updated value if rising edge is detected
+// Description : Entry point into the application.
+// *****************************************************************************//
+int LightController()
+{
+		//a is the variable to hold the current state of the button
+		int Button = LightSwitch();
+		if (Button	==	Pressed)
+		{
+				delay(1e6);																												//Delay one sec
+					while(1)
+					{
+						Button = LightSwitch();
+						if (Button == Pressed)		//A while loop works as a detection of the rising edge
+						{
+							Button = LightSwitch();
+							while(1)
+							{
+								if (Button == Notpressed)
+								{
+									return 1;
+								}
+							}
+						}
+						else
+						{
+							break;
+						}
+					}
+		}
+		return 0;
+}
+
+void OUTPUTCONTROL(int FanRisingEdgeDetection,int LightRisingEdgeDetection)
+{
+	if (FanRisingEdgeDetection || LightRisingEdgeDetection) //If rising edge is detected,
+			{
+						if (FanRisingEdgeDetection == 1 && (GPIOA->ODR & 1 <<10) == 0x00000400)					//If rising edge is detected,
+						{
+							GPIOA->ODR &= ~(1 <<10);
+						}
+						else if (FanRisingEdgeDetection == 1 && (GPIOA->ODR & 1 <<10) == 0x00000000)
+						{
+							GPIOA->ODR |= 1 <<10;
+						}
+				
+						if (LightRisingEdgeDetection == 1 && (GPIOB->ODR & 1 <<0) == 0x00000001)
+						{
+							GPIOB->ODR &= ~(1 <<0);
+						}
+						else if (LightRisingEdgeDetection == 1 && (GPIOB->ODR & 1 <<0) == 0x00000000)
+						{
+							GPIOB->ODR |= 1 <<0;
+						}
+						
+						
+			}
+	
+}
+
+//******************************************************************************//
+// Function: main()
+// Input : Light Switch (PA9), Fan Switch(PA8)
+// Return : Fan Control Output (LED3), Light Control Output (LED4)
+// Description : Entry point into the application.
+// *****************************************************************************//
+int FanRisingEdgeDetection;
+int LightRisingEdgeDetection;
+int main(void)
+{
+	// Bring up the GPIO for the power regulators.
+	boardSupport_init();
+	initRCC();
+	initUSART();
+	initGPIO();
+	
+	
+
+	
+	
+  while (1)
+  {
+			//******************************************************************************//
+			//Firstly, build the LEDs control by using switch
+			//Switches are working as a toggle buttons
+			//Rising edge detection is going to be used in this case
+			FanRisingEdgeDetection = FanController();
+			LightRisingEdgeDetection = LightController();
+		
+		
+			OUTPUTCONTROL(FanRisingEdgeDetection,LightRisingEdgeDetection);
+			
+			
+			
+  }
+} 
+
